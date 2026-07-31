@@ -35,7 +35,6 @@ export function useWebRTCStream({ videoRef, deviceId }: UseWebRTCStreamOptions):
       })
       pcRef.current = pc
 
-      pc.addTransceiver('audio', { direction: 'sendrecv' })
       pc.addTransceiver('video', { direction: 'recvonly' })
 
       pc.ontrack = (e) => {
@@ -45,7 +44,7 @@ export function useWebRTCStream({ videoRef, deviceId }: UseWebRTCStreamOptions):
         }
       }
 
-      const offer = await pc.createOffer({ offerToReceiveVideo: true, offerToReceiveAudio: true })
+      const offer = await pc.createOffer({ offerToReceiveVideo: true, offerToReceiveAudio: false })
       await pc.setLocalDescription(offer)
 
       // Wait for ICE gathering
