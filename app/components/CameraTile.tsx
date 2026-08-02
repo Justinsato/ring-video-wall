@@ -25,7 +25,12 @@ export function CameraTile({ device }: { device: CameraTileDevice }) {
 
   useEffect(() => {
     startStream()
-    return () => { stopStream() }
+    const onPageHide = () => { stopStream() }
+    window.addEventListener('pagehide', onPageHide)
+    return () => {
+      window.removeEventListener('pagehide', onPageHide)
+      stopStream()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

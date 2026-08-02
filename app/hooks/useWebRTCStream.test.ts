@@ -71,4 +71,15 @@ describe('useWebRTCStream (video-only)', () => {
     expect(del[0]).toBe('/api/ring/stream')
     expect(JSON.parse(del[1].body)).toEqual({ sessionUrl: 'https://api.amazonvision.com/session/abc' })
   })
+
+  it('marks the DELETE fetch keepalive so it survives page unload', async () => {
+    const videoRef = createRef<HTMLVideoElement>()
+    // @ts-expect-error minimal stub
+    videoRef.current = { srcObject: null }
+    const { result } = renderHook(() => useWebRTCStream({ videoRef, deviceId: 'dev-1' }))
+    await act(async () => { await result.current.startStream() })
+    await act(async () => { await result.current.stopStream() })
+    const del = (fetch as any).mock.calls.find((c: any[]) => c[1]?.method === 'DELETE')
+    expect(del[1].keepalive).toBe(true)
+  })
 })

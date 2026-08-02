@@ -89,6 +89,7 @@ export function useWebRTCStream({ videoRef, deviceId }: UseWebRTCStreamOptions):
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionUrl: sessionUrlRef.current }),
+        keepalive: true,
       }).catch(() => {})
       sessionUrlRef.current = null
     }

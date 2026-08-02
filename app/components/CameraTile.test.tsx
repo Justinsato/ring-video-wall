@@ -44,4 +44,11 @@ describe('CameraTile', () => {
     render(<CameraTile device={{ id: 'd1', name: 'Front Door', online: true }} />)
     expect(screen.getByText('error')).toBeInTheDocument()
   })
+
+  it('closes the stream on pagehide (tab close)', () => {
+    render(<CameraTile device={{ id: 'd1', name: 'Front Door', online: true }} />)
+    stopStream.mockClear()
+    window.dispatchEvent(new Event('pagehide'))
+    expect(stopStream).toHaveBeenCalledOnce()
+  })
 })
