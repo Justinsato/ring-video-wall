@@ -32,3 +32,9 @@ dist/
 # Misc
 *.log
 *.tsbuildinfo
+
+# Every env file, whatever it is called. Deliberately broad: enumerated
+# patterns miss one-off CLI pulls (e.g. .env.prodpull from `vercel env pull`),
+# which is how live secrets reach a commit. Name the exceptions, not the secrets.
+.env*
+!/.env.example
