@@ -18,6 +18,13 @@ on the account at once, each in its own tile, each holding its own WHEP session.
 Everything below this section is the upstream documentation and still applies:
 you need a Ring token the same way, and setup is unchanged.
 
+<!-- Demo GIF: drop the file at docs/demo.gif and uncomment the line below.
+     Deliberately not committed — recording the wall records live camera footage
+     and this repo is public. See docs/capture-demo.md for the capture recipe,
+     including a synthetic-source option that exposes nothing.
+![The video wall: tiles going connecting -> live, one tile erroring and reconnecting](docs/demo.gif)
+-->
+
 ### What it does
 
 Open the app and the wall loads. `GET /api/ring/devices` returns the account's
