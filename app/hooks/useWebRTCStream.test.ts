@@ -33,7 +33,11 @@ class MockPeerConnection {
 let lastPc: MockPeerConnection
 
 beforeEach(() => {
-  vi.stubGlobal('RTCPeerConnection', vi.fn(() => {
+  // `function`, not an arrow: vitest 4 requires a mock used with `new` to be
+  // constructible, and an arrow is not. Under an arrow the object the factory
+  // returns is discarded, lastPc stays undefined, and 17 tests fail on
+  // "Cannot read properties of undefined". vitest 2 accepted either.
+  vi.stubGlobal('RTCPeerConnection', vi.fn(function () {
     lastPc = new MockPeerConnection()
     return lastPc
   }))
@@ -115,7 +119,7 @@ describe('useWebRTCStream ICE gathering', () => {
   // prototype). Re-stub so these two tests get a connection that is still
   // gathering when the hook starts waiting on it.
   beforeEach(() => {
-    vi.stubGlobal('RTCPeerConnection', vi.fn(() => {
+    vi.stubGlobal('RTCPeerConnection', vi.fn(function () {
       lastPc = new MockPeerConnection()
       lastPc.iceGatheringState = 'gathering'
       return lastPc

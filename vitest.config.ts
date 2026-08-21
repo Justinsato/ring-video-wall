@@ -1,9 +1,10 @@
 import { defineConfig } from 'vitest/config'
-import react from '@vitejs/plugin-react'
 import path from 'node:path'
 
+// No @vitejs/plugin-react: vitest 4's own transform handles the JSX, and the
+// plugin's last release pins vite@5, which is the sole remaining source of the
+// vite and esbuild advisories. Dropping it clears both.
 export default defineConfig({
-  plugins: [react()],
   resolve: {
     alias: { '@': path.resolve(__dirname, '.') },
   },

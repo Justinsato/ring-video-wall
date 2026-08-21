@@ -161,22 +161,29 @@ same reconnect path as any other failure.
 
 ### Dependency posture
 
-`npm audit` reports 5 advisories, all in the test toolchain (`vitest`, `vite`,
-`esbuild`, `vite-node`, `@vitest/mocker`), none of which ships to a browser. They
-are left open deliberately, and the reasoning is written down so nobody has to
-re-derive it:
+`npm audit` reports zero advisories. Getting there was mostly deletion rather
+than version bumps, and the chain is worth recording because each removal
+unblocked the next:
 
-- The **critical** `vitest` advisory is arbitrary file read **while the Vitest UI
-  server is listening**. The scripts here are `vitest run` and `vitest` (watch).
-  Neither starts the UI server, and `--ui` appears nowhere in the repo.
-- The fix for all five is `vitest@4`, which replaces esbuild with **rolldown**.
-  Rolldown cannot parse this project's `.tsx` because `tsconfig.json` sets
-  `jsx: "preserve"`, which Next.js requires. Every test file fails to parse.
-- `vitest@3` avoids rolldown but pulls `vite@7`, whose peer range conflicts with
-  the pinned `@types/node@20.10.6`.
+| Removed | Why it could go | What it cleared |
+|---|---|---|
+| `onnxruntime-web` | imported nowhere | both `protobufjs` advisories, 141MB |
+| the `webpack` block in `next.config.js` | it stubbed `fs`/`path`/`crypto` for the browser, the standard onnxruntime workaround | Next 16's Turbopack default, which was failing the build on it |
+| `null-loader` | only existed for that webpack block | 72 packages |
+| `@vitejs/plugin-react` | vitest 4 transforms the JSX itself | the last `vite` and `esbuild` advisories |
 
-So it is a toolchain conflict, not an outstanding chore. Revisit when rolldown
-handles `jsx: preserve`, or when the `@types/node` pin is raised.
+Next 16 then patched `next` plus the `postcss` and `sharp` it bundles, which no
+15.x release could. vitest 4 cleared the critical advisory in the test runner.
+
+Two things to know if you touch the test setup:
+
+- **A `vi.fn()` mock used with `new` must be a `function`, not an arrow.** vitest
+  4 requires a constructible implementation. Under an arrow the returned object
+  is discarded and every test touching the fake `RTCPeerConnection` fails on
+  `Cannot read properties of undefined`.
+- **`tsconfig.json` now has `jsx: "react-jsx"`**, set by Next 16 itself. It used
+  to be `preserve`, which vitest 4's rolldown transform cannot parse. The
+  upgrade order matters: Next 16 before vitest 4, not the other way round.
 
 ### Known limits
 
