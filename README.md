@@ -6,6 +6,90 @@ Get started with the [Ring Partner API](https://developer.amazon.com/docs/ring/a
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-blue)
 ![Python](https://img.shields.io/badge/Python-3.8+-blue)
 
+---
+
+## This fork: BroadwayVideoWall
+
+A fork of [AmazonAppDev/ring-api-helloworld](https://github.com/AmazonAppDev/ring-api-helloworld)
+that adds a **multi-camera video wall**. The upstream sample streams
+`devices[0]` only, behind a "Start Live Stream" button. This renders every camera
+on the account at once, each in its own tile, each holding its own WHEP session.
+
+Everything below this section is the upstream documentation and still applies:
+you need a Ring token the same way, and setup is unchanged.
+
+### What it does
+
+Open the app and the wall loads. `GET /api/ring/devices` returns the account's
+devices, and each one becomes a tile that starts streaming on mount. No clicking
+through cameras one at a time.
+
+Tiles lay out responsively: one column on mobile, two at `sm`, three at `lg`,
+four at `xl`. Each tile is 16:9 and shows the device name plus a status pill:
+
+| Pill | Meaning |
+|------|---------|
+| `live` (green) | track received, video is playing |
+| `connecting` (yellow) | negotiating, or waiting on the first frame |
+| `offline` (grey) | the device reported itself offline |
+| `error` (red) | negotiation or the stream request failed |
+
+A tile that fails does not take the wall down. Each one owns its own connection
+and its own error state, so one dead camera shows red and the rest keep running.
+
+### How a tile streams
+
+`useWebRTCStream` owns one `RTCPeerConnection` per tile:
+
+1. Adds a **recvonly video** transceiver. Audio is never requested
+   (`offerToReceiveAudio: false`), so this is a video-only wall by design.
+2. Creates the offer, then waits for ICE gathering to complete, with a 3-second
+   timeout so a stalled candidate search cannot hang the tile forever. STUN is
+   Google's public servers.
+3. `POST /api/ring/stream` with the SDP offer and the device id, then applies the
+   returned `sdpAnswer` and keeps the `sessionUrl`.
+
+Teardown is the part worth reading. Ring sessions do not clean themselves up, so
+a closed tab would otherwise leave sessions open server-side. `stopStream` closes
+the peer connection and sends `DELETE /api/ring/stream` with **`keepalive: true`**,
+which is what lets the request survive the page going away. It is wired to both
+React unmount and the `pagehide` event, because unmount alone does not fire on a
+tab close.
+
+### Files this fork adds
+
+| Path | Role |
+|------|------|
+| `app/components/VideoWall.tsx` | fetches devices, renders the responsive grid |
+| `app/components/CameraTile.tsx` | one camera: video element, name, status pill, lifecycle |
+| `app/hooks/useWebRTCStream.ts` | one WHEP session: negotiation, ICE, cleanup |
+| `vitest.config.ts`, `test/setup.ts` | test harness |
+
+### Tests
+
+```bash
+npx vitest run     # 13 tests across 3 files
+```
+
+What they actually assert: the offer adds a recvonly video transceiver and **no**
+audio transceiver, the SDP offer and device id are POSTed to
+`/api/ring/stream`, `stopStream` DELETEs the session, that DELETE is marked
+`keepalive`, the stream starts on mount and stops on both unmount and
+`pagehide`, one tile renders per discovered device, and the empty and error
+states render.
+
+The ICE-gathering timeout and the `offline` and `connecting` pill states are not
+covered.
+
+### Known limits
+
+- **Video only.** No audio track is requested anywhere.
+- **Every camera starts at once.** N cameras means N concurrent WHEP sessions
+  from one browser. Fine for a handful; untested at large device counts.
+- **No reconnect.** A tile that errors stays errored until the page is reloaded.
+
+---
+
 ## What's Inside
 
 | Path | What it does | You need |
