@@ -38,3 +38,6 @@ dist/
 # which is how live secrets reach a commit. Name the exceptions, not the secrets.
 .env*
 !/.env.example
+
+# Local Claude Code session state and agent worktrees
+.claude/
