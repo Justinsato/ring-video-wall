@@ -65,12 +65,13 @@ tab close.
 | `app/hooks/useWebRTCStream.ts` | one WHEP session: negotiation, ICE, cleanup |
 | `app/lib/retry.ts` | reconnect backoff and the retry predicate |
 | `app/lib/connection-health.ts` | what a connection state change means |
+| `app/lib/stall.ts` | decoder-progress stall detection |
 | `vitest.config.ts`, `test/setup.ts` | test harness |
 
 ### Tests
 
 ```bash
-npx vitest run     # 41 tests across 5 files
+npx vitest run     # 61 tests across 6 files
 ```
 
 What they actually assert: the offer adds a recvonly video transceiver and **no**
@@ -126,13 +127,34 @@ bad states are handled differently:
 Late events from a connection already replaced or closed are dropped, so a
 reconnect cannot be triggered by the session it just tore down.
 
+That covers the transport. The picture is a separate problem: a session can hold
+at `connected` with a healthy ICE pair while frames stop arriving, because the
+encoder wedged or the camera rebooted. So `getStats()` is polled every 2 seconds
+and `framesDecoded` on the inbound video stream is checked for progress. Three
+consecutive flat samples, about 6 seconds of frozen picture, is a stall.
+
+Why it is built the way it is:
+
+- **Three strikes, not one.** A single flat sample is a GC pause or a slow
+  report, and taking a working tile down over one is worse than the stall.
+- **Missing stats are not a stall.** No inbound-rtp row, no `framesDecoded`
+  field, or a `getStats()` rejection all mean *no news* and leave the strike
+  count alone. Counting them as evidence would fire on any browser that
+  publishes stats late, and on every connection in the middle of closing.
+- **It strikes from zero.** A track that has produced no frames 6 seconds after
+  `ontrack` fired is as broken as one that froze. Treating "never started" as a
+  special case is how that goes unreported.
+- **A counter going backwards is a new track, not a freeze.** The browser resets
+  `framesDecoded`, so it re-baselines instead of striking.
+- **Audio is ignored.** It decodes happily while the picture is frozen, which is
+  exactly the case this exists to catch.
+
+A declared stall stops the polling and sets the error, which hands off to the
+same reconnect path as any other failure.
+
 ### Known limits
 
 - **Video only.** No audio track is requested anywhere.
-- **A stalled track is still undetected.** The health watch covers the
-  *connection*, not the media. A session that stays `connected` while frames stop
-  arriving would still show `live`; catching that needs `getStats()` polling on
-  `framesDecoded`, which is not implemented.
 - **Every camera starts at once.** N cameras means N concurrent WHEP sessions
   from one browser. Fine for a handful; untested at large device counts.
 - **Reconnect is bounded.** Five automatic attempts, then the tile waits for a

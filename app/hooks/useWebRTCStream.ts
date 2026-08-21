@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, RefObject } from 'react'
 import { DISCONNECT_GRACE_MS, healthAction } from '../lib/connection-health'
+import { STALL_POLL_MS, assessFrames, framesDecodedFrom, initialStallState } from '../lib/stall'
 
 interface UseWebRTCStreamOptions {
   videoRef: RefObject<HTMLVideoElement>
@@ -25,6 +26,7 @@ export function useWebRTCStream({ videoRef, deviceId }: UseWebRTCStreamOptions):
   const pcRef = useRef<RTCPeerConnection | null>(null)
   const sessionUrlRef = useRef<string | null>(null)
   const graceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const stallTimer = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const clearGrace = useCallback(() => {
     if (graceTimer.current) {
@@ -33,6 +35,41 @@ export function useWebRTCStream({ videoRef, deviceId }: UseWebRTCStreamOptions):
     }
   }, [])
 
+  const clearStall = useCallback(() => {
+    if (stallTimer.current) {
+      clearInterval(stallTimer.current)
+      stallTimer.current = null
+    }
+  }, [])
+
+  /**
+   * Poll decoder progress. The connection watch above covers the transport;
+   * this covers the picture, which can freeze while the transport stays healthy.
+   * Stops itself on the first stall so it does not keep sampling a dead session.
+   */
+  const watchForStall = useCallback((pc: RTCPeerConnection) => {
+    let state = initialStallState
+    stallTimer.current = setInterval(async () => {
+      if (pcRef.current !== pc) return
+      let frames: number | null = null
+      try {
+        frames = framesDecodedFrom(await pc.getStats())
+      } catch {
+        // getStats can reject on a closing connection. A failed sample is not
+        // evidence of a stall, so leave the state alone and try again.
+        return
+      }
+      if (pcRef.current !== pc) return
+      const { next, verdict } = assessFrames(state, frames)
+      state = next
+      if (verdict === 'stalled') {
+        clearStall()
+        setStreamActive(false)
+        setStreamError('Stream stalled')
+      }
+    }, STALL_POLL_MS)
+  }, [clearStall])
+
   const startStream = useCallback(async () => {
     setStreamError(null)
     // Close any connection still held before opening another. Without this a
@@ -40,6 +77,7 @@ export function useWebRTCStream({ videoRef, deviceId }: UseWebRTCStreamOptions):
     // unreachable while a tile started exactly once; it is the normal path now
     // that a failed tile reconnects.
     clearGrace()
+    clearStall()
     if (pcRef.current) {
       pcRef.current.close()
       pcRef.current = null
@@ -124,18 +162,20 @@ export function useWebRTCStream({ videoRef, deviceId }: UseWebRTCStreamOptions):
       const { sdpAnswer, sessionUrl } = await res.json()
       sessionUrlRef.current = sessionUrl
       await pc.setRemoteDescription({ type: 'answer', sdp: sdpAnswer })
+      watchForStall(pc)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Stream failed'
       console.error('Stream error:', err)
       setStreamError(message)
       setStreamActive(false)
     }
-  }, [videoRef, deviceId, clearGrace])
+  }, [videoRef, deviceId, clearGrace, clearStall, watchForStall])
 
   const stopStream = useCallback(async () => {
     // Before close(), so the grace timer cannot outlive the connection and
     // report "Connection lost" on a tile the user deliberately stopped.
     clearGrace()
+    clearStall()
     pcRef.current?.close()
     pcRef.current = null
     if (sessionUrlRef.current) {
@@ -150,7 +190,7 @@ export function useWebRTCStream({ videoRef, deviceId }: UseWebRTCStreamOptions):
     if (videoRef.current) videoRef.current.srcObject = null
     setStreamActive(false)
     setStreamError(null)
-  }, [videoRef, clearGrace])
+  }, [videoRef, clearGrace, clearStall])
 
   return { streamActive, streamError, startStream, stopStream }
 }
