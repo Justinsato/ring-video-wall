@@ -26,6 +26,14 @@ export function useWebRTCStream({ videoRef, deviceId }: UseWebRTCStreamOptions):
 
   const startStream = useCallback(async () => {
     setStreamError(null)
+    // Close any connection still held before opening another. Without this a
+    // second startStream() silently orphans the first RTCPeerConnection. That was
+    // unreachable while a tile started exactly once; it is the normal path now
+    // that a failed tile reconnects.
+    if (pcRef.current) {
+      pcRef.current.close()
+      pcRef.current = null
+    }
     try {
       const pc = new RTCPeerConnection({
         iceServers: [

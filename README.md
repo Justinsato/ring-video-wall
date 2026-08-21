@@ -63,12 +63,13 @@ tab close.
 | `app/components/VideoWall.tsx` | fetches devices, renders the responsive grid |
 | `app/components/CameraTile.tsx` | one camera: video element, name, status pill, lifecycle |
 | `app/hooks/useWebRTCStream.ts` | one WHEP session: negotiation, ICE, cleanup |
+| `app/lib/retry.ts` | reconnect backoff and the retry predicate |
 | `vitest.config.ts`, `test/setup.ts` | test harness |
 
 ### Tests
 
 ```bash
-npx vitest run     # 15 tests across 3 files
+npx vitest run     # 30 tests across 4 files
 ```
 
 What they actually assert: the offer adds a recvonly video transceiver and **no**
@@ -86,12 +87,32 @@ only the first, killing the event handler fails only the second.
 
 The `offline` and `connecting` pill states are still uncovered.
 
+### Reconnect
+
+A tile that fails reconnects on its own: 2s, 4s, 8s, 16s, then 30s, five attempts,
+and the pill reports which attempt it is on. Reaching `live` resets the counter, so
+the next outage starts from 2s instead of inheriting a long delay. After five it
+stops and shows the error with a Retry button.
+
+Two things it is careful about, both tested:
+
+- **It tears the old session down first.** Ring does not reap sessions, so calling
+  `startStream` again without the `DELETE` strands one server-side session per
+  attempt.
+- **An offline device is never retried.** That failure is not transient, and five
+  attempts per offline camera is load for nothing.
+
+The cap on the backoff matters on a large account: N tiles retry independently, so
+an uncapped curve becomes a slow thundering herd against the Ring API.
+
 ### Known limits
 
 - **Video only.** No audio track is requested anywhere.
 - **Every camera starts at once.** N cameras means N concurrent WHEP sessions
   from one browser. Fine for a handful; untested at large device counts.
-- **No reconnect.** A tile that errors stays errored until the page is reloaded.
+- **Reconnect is bounded.** Five automatic attempts, then the tile waits for a
+  click. It does not keep trying forever, because the Ring token expires in about
+  30 minutes and retrying past that is pure load.
 
 ---
 
