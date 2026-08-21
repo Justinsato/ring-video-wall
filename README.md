@@ -64,12 +64,13 @@ tab close.
 | `app/components/CameraTile.tsx` | one camera: video element, name, status pill, lifecycle |
 | `app/hooks/useWebRTCStream.ts` | one WHEP session: negotiation, ICE, cleanup |
 | `app/lib/retry.ts` | reconnect backoff and the retry predicate |
+| `app/lib/connection-health.ts` | what a connection state change means |
 | `vitest.config.ts`, `test/setup.ts` | test harness |
 
 ### Tests
 
 ```bash
-npx vitest run     # 30 tests across 4 files
+npx vitest run     # 41 tests across 5 files
 ```
 
 What they actually assert: the offer adds a recvonly video transceiver and **no**
@@ -105,9 +106,33 @@ Two things it is careful about, both tested:
 The cap on the backoff matters on a large account: N tiles retry independently, so
 an uncapped curve becomes a slow thundering herd against the Ring API.
 
+### Detecting a stream that dies quietly
+
+Negotiation succeeding is not the same as the stream staying up. `startStream`
+returns as soon as the answer is applied, so a session that dies afterwards used
+to leave the tile on a green `live` pill in front of a frozen last frame — the
+worst state to be in, because nothing looks wrong.
+
+`onconnectionstatechange` is now watched for the life of the session, and the two
+bad states are handled differently:
+
+| State | Treatment |
+|-------|-----------|
+| `failed` | terminal. ICE is out of candidates and will not recover without a restart, so it errors immediately and the reconnect takes over |
+| `disconnected` | given 5 seconds. A wifi handoff or NAT rebind routinely returns to `connected` on its own, and tearing down on sight turns a two-second blip into a full renegotiation across every tile |
+| `connected` | cancels a pending failure |
+| `closed` | ignored — that is our own `stopStream`, and treating it as a fault would make every deliberate stop trigger a reconnect |
+
+Late events from a connection already replaced or closed are dropped, so a
+reconnect cannot be triggered by the session it just tore down.
+
 ### Known limits
 
 - **Video only.** No audio track is requested anywhere.
+- **A stalled track is still undetected.** The health watch covers the
+  *connection*, not the media. A session that stays `connected` while frames stop
+  arriving would still show `live`; catching that needs `getStats()` polling on
+  `framesDecoded`, which is not implemented.
 - **Every camera starts at once.** N cameras means N concurrent WHEP sessions
   from one browser. Fine for a handful; untested at large device counts.
 - **Reconnect is bounded.** Five automatic attempts, then the tile waits for a

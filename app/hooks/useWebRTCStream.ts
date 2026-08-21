@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useCallback, RefObject } from 'react'
+import { DISCONNECT_GRACE_MS, healthAction } from '../lib/connection-health'
 
 interface UseWebRTCStreamOptions {
   videoRef: RefObject<HTMLVideoElement>
@@ -23,6 +24,14 @@ export function useWebRTCStream({ videoRef, deviceId }: UseWebRTCStreamOptions):
   const [streamError, setStreamError] = useState<string | null>(null)
   const pcRef = useRef<RTCPeerConnection | null>(null)
   const sessionUrlRef = useRef<string | null>(null)
+  const graceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const clearGrace = useCallback(() => {
+    if (graceTimer.current) {
+      clearTimeout(graceTimer.current)
+      graceTimer.current = null
+    }
+  }, [])
 
   const startStream = useCallback(async () => {
     setStreamError(null)
@@ -30,6 +39,7 @@ export function useWebRTCStream({ videoRef, deviceId }: UseWebRTCStreamOptions):
     // second startStream() silently orphans the first RTCPeerConnection. That was
     // unreachable while a tile started exactly once; it is the normal path now
     // that a failed tile reconnects.
+    clearGrace()
     if (pcRef.current) {
       pcRef.current.close()
       pcRef.current = null
@@ -49,6 +59,39 @@ export function useWebRTCStream({ videoRef, deviceId }: UseWebRTCStreamOptions):
         if (videoRef.current && e.streams[0]) {
           videoRef.current.srcObject = e.streams[0]
           setStreamActive(true)
+        }
+      }
+
+      // Watch the connection for the whole session, not just through
+      // negotiation. Everything above this runs once and returns; without this
+      // handler a stream that dies after going live leaves the tile showing a
+      // green `live` pill over a frozen frame, and no error path ever fires.
+      pc.onconnectionstatechange = () => {
+        // A state change on a connection we have already replaced or closed is
+        // not this tile's business.
+        if (pcRef.current !== pc) return
+
+        switch (healthAction(pc.connectionState)) {
+          case 'fail-now':
+            clearGrace()
+            setStreamActive(false)
+            setStreamError('Connection failed')
+            break
+          case 'watch':
+            // May self-heal. Only call it a failure if it is still down when the
+            // grace period expires.
+            if (graceTimer.current) break
+            graceTimer.current = setTimeout(() => {
+              graceTimer.current = null
+              if (pcRef.current !== pc) return
+              if (pc.connectionState === 'connected') return
+              setStreamActive(false)
+              setStreamError('Connection lost')
+            }, DISCONNECT_GRACE_MS)
+            break
+          case 'recovered':
+            clearGrace()
+            break
         }
       }
 
@@ -87,9 +130,12 @@ export function useWebRTCStream({ videoRef, deviceId }: UseWebRTCStreamOptions):
       setStreamError(message)
       setStreamActive(false)
     }
-  }, [videoRef, deviceId])
+  }, [videoRef, deviceId, clearGrace])
 
   const stopStream = useCallback(async () => {
+    // Before close(), so the grace timer cannot outlive the connection and
+    // report "Connection lost" on a tile the user deliberately stopped.
+    clearGrace()
     pcRef.current?.close()
     pcRef.current = null
     if (sessionUrlRef.current) {
@@ -104,7 +150,7 @@ export function useWebRTCStream({ videoRef, deviceId }: UseWebRTCStreamOptions):
     if (videoRef.current) videoRef.current.srcObject = null
     setStreamActive(false)
     setStreamError(null)
-  }, [videoRef])
+  }, [videoRef, clearGrace])
 
   return { streamActive, streamError, startStream, stopStream }
 }
