@@ -29,7 +29,7 @@
     "autoprefixer": "10.4.16",
     "jsdom": "^25.0.1",
     "null-loader": "^4.0.1",
-    "postcss": "8.5.10",
+    "postcss": "8.5.23",
     "tailwindcss": "3.4.0",
     "typescript": "5.3.3",
     "vitest": "^2.1.9"
