@@ -2,7 +2,7 @@
 
 Get started with the [Ring Partner API](https://developer.amazon.com/docs/ring/api-documentation.html) — explore device APIs from your terminal and stream live video in your browser.
 
-![Next.js](https://img.shields.io/badge/Next.js-14-black)
+![Next.js](https://img.shields.io/badge/Next.js-16-black)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-blue)
 ![Python](https://img.shields.io/badge/Python-3.8+-blue)
 
@@ -158,6 +158,25 @@ Why it is built the way it is:
 
 A declared stall stops the polling and sets the error, which hands off to the
 same reconnect path as any other failure.
+
+### Dependency posture
+
+`npm audit` reports 5 advisories, all in the test toolchain (`vitest`, `vite`,
+`esbuild`, `vite-node`, `@vitest/mocker`), none of which ships to a browser. They
+are left open deliberately, and the reasoning is written down so nobody has to
+re-derive it:
+
+- The **critical** `vitest` advisory is arbitrary file read **while the Vitest UI
+  server is listening**. The scripts here are `vitest run` and `vitest` (watch).
+  Neither starts the UI server, and `--ui` appears nowhere in the repo.
+- The fix for all five is `vitest@4`, which replaces esbuild with **rolldown**.
+  Rolldown cannot parse this project's `.tsx` because `tsconfig.json` sets
+  `jsx: "preserve"`, which Next.js requires. Every test file fails to parse.
+- `vitest@3` avoids rolldown but pulls `vite@7`, whose peer range conflicts with
+  the pinned `@types/node@20.10.6`.
+
+So it is a toolchain conflict, not an outstanding chore. Revisit when rolldown
+handles `jsx: preserve`, or when the `@types/node` pin is raised.
 
 ### Known limits
 
