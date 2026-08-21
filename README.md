@@ -68,7 +68,7 @@ tab close.
 ### Tests
 
 ```bash
-npx vitest run     # 13 tests across 3 files
+npx vitest run     # 15 tests across 3 files
 ```
 
 What they actually assert: the offer adds a recvonly video transceiver and **no**
@@ -78,8 +78,13 @@ audio transceiver, the SDP offer and device id are POSTed to
 `pagehide`, one tile renders per discovered device, and the empty and error
 states render.
 
-The ICE-gathering timeout and the `offline` and `connecting` pill states are not
-covered.
+The ICE wait has its own pair, because it is the one place the hook can hang: one
+proves the 3-second fallback releases a gathering that never completes, the other
+proves the offer goes out on the `icegatheringstatechange` event without the
+clock ever reaching 3000. Both were mutation-checked — killing the timeout fails
+only the first, killing the event handler fails only the second.
+
+The `offline` and `connecting` pill states are still uncovered.
 
 ### Known limits
 
